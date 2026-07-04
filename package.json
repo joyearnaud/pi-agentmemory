@@ -1,0 +1,42 @@
+{
+  "name": "pi-agentmemory",
+  "version": "0.1.0",
+  "description": "Pi Coding Agent extension bridging agentmemory's REST API — cross-session memory for any pi session. Unofficial: agentmemory ships no official pi plugin.",
+  "keywords": [
+    "pi-package",
+    "agentmemory",
+    "memory",
+    "pi",
+    "coding-agent"
+  ],
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Arnaud JOYE",
+    "url": "https://github.com/joyearnaud"
+  },
+  "homepage": "https://github.com/joyearnaud/pi-agentmemory",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joyearnaud/pi-agentmemory.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true },
+    "typebox": { "optional": true }
+  },
+  "scripts": {
+    "test": "node test/contract.smoke.js"
+  }
+}
