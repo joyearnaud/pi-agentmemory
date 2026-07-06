@@ -1,6 +1,6 @@
 {
   "name": "pi-agentmemory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi Coding Agent extension bridging agentmemory's REST API — cross-session memory for any pi session. Unofficial: agentmemory ships no official pi plugin.",
   "keywords": [
     "pi-package",

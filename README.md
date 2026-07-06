@@ -69,6 +69,12 @@ pi session ──extension──► agentmemory REST (:3111) ──► iii-engin
 The extension depends on four REST endpoints: `GET /health`, `POST /smart-search`,
 `POST /remember`, `POST /observe`. Full contract: [docs/REST-CONTRACT.md](docs/REST-CONTRACT.md).
 
+## Backup
+
+File-level backup of the agentmemory store, callable from any pi session via the
+`memory_backup` tool or `/agentmemory-backup` command. Local tar.gz + rotation,
+optional rsync to a remote. Full strategy + restore: [docs/BACKUP.md](docs/BACKUP.md).
+
 ## Updating
 
 agentmemory evolves fast. The 60-second compatibility check:

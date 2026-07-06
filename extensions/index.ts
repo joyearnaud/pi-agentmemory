@@ -2,7 +2,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFile as execFileCb } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { createPlaintextBearerAuthGuard } from "./security.js";
+
+const execFileP = promisify(execFileCb);
 
 type TextBlock = { type?: string; text?: string };
 type AssistantMessage = { role?: string; content?: unknown };
@@ -109,6 +115,58 @@ async function callAgentMemory<T>(
     return (await response.json()) as T;
   } catch {
     return null;
+  }
+}
+
+// --- Backup ------------------------------------------------------------------
+// Spawns the bundled scripts/agentmemory-backup.sh (file-level tar+rotate+rsync).
+// Resolution order: AGENTMEMORY_BACKUP_SCRIPT env → bundled script next to this
+// extension → bare "agentmemory-backup.sh" on PATH. Returns a clear result;
+// never throws so the tool/command always yield a usable message.
+function resolveBackupScript(): { script: string; viaPath: boolean } | null {
+  const envScript = process.env.AGENTMEMORY_BACKUP_SCRIPT;
+  if (envScript && existsSync(envScript)) return { script: envScript, viaPath: false };
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const bundled = path.join(here, "..", "scripts", "agentmemory-backup.sh");
+    if (existsSync(bundled)) return { script: bundled, viaPath: false };
+  } catch {
+    // import.meta.url unavailable in this loader — fall through to PATH lookup.
+  }
+  return null;
+}
+
+type BackupResult = {
+  ok: boolean;
+  script: string;
+  stdout: string;
+  stderr: string;
+  archive?: string;
+};
+
+async function runBackup(opts: { dryRun?: boolean } = {}): Promise<BackupResult> {
+  const resolved = resolveBackupScript();
+  const script = resolved?.script ?? "agentmemory-backup.sh";
+  const viaPath = !resolved;
+  const label = viaPath ? `${script} (PATH)` : script;
+  const args = opts.dryRun ? ["--dry-run"] : [];
+  try {
+    const { stdout, stderr } = await execFileP(script, args, {
+      env: { ...process.env },
+      timeout: 120000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    const lines = stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+    const archive = opts.dryRun ? undefined : lines[lines.length - 1];
+    return { ok: true, script: label, stdout, stderr, archive };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    return {
+      ok: false,
+      script: label,
+      stdout: e.stdout ?? "",
+      stderr: e.stderr ?? e.message ?? String(err),
+    };
   }
 }
 
@@ -222,6 +280,42 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
         content: [{ type: "text", text: `Saved memory (${params.type || "fact"}): ${params.content}` }],
         details: result,
       };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_backup",
+    label: "Memory Backup",
+    description:
+      "Run a file-level backup of the agentmemory store to a local tar.gz (and an optional remote via AGENTMEMORY_BACKUP_REMOTE). Use before risky changes or to capture a snapshot.",
+    parameters: Type.Object({
+      dryRun: Type.Optional(
+        Type.Boolean({ description: "If true, show what would happen without writing", default: false }),
+      ),
+    }),
+    async execute(_toolCallId, params) {
+      const r = await runBackup({ dryRun: params.dryRun === true });
+      const head = r.ok
+        ? `agentmemory backup ${params.dryRun ? "dry-run OK" : "succeeded"}${r.archive ? `: ${r.archive}` : ""} (via ${r.script})`
+        : `agentmemory backup failed (via ${r.script})`;
+      return {
+        content: [{ type: "text", text: [head, (r.stderr || r.stdout).trim()].filter(Boolean).join("\n") }],
+        details: r,
+      };
+    },
+  });
+
+  pi.registerCommand("agentmemory-backup", {
+    description: "Run an agentmemory backup now (append --dry-run to preview)",
+    handler: async (args, ctx) => {
+      const dryRun = String(args || "").includes("dry-run");
+      const r = await runBackup({ dryRun });
+      ctx.ui.notify(
+        r.ok
+          ? `agentmemory backup ${dryRun ? "dry-run OK" : "done"}${r.archive ? `: ${path.basename(r.archive)}` : ""}`
+          : "agentmemory backup failed",
+        r.ok ? "info" : "warning",
+      );
     },
   });
 
