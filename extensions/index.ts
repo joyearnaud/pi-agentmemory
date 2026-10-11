@@ -36,6 +36,12 @@ type HealthResponse = {
 };
 
 const DEFAULT_URL = process.env.AGENTMEMORY_URL || "http://localhost:3111";
+// The server is normally remote (see AGENTMEMORY_URL). Resolve the effective URL
+// through this helper so every diagnostic reports the endpoint actually tried
+// instead of a hardcoded literal.
+function resolveBaseUrl(): string {
+  return normalizeBaseUrl(process.env.AGENTMEMORY_URL || DEFAULT_URL);
+}
 const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard();
 const TOOL_GUIDANCE = [
   "agentmemory is available for cross-session memory.",
@@ -96,7 +102,7 @@ async function callAgentMemory<T>(
     baseUrl?: string;
   },
 ): Promise<T | null> {
-  const baseUrl = normalizeBaseUrl(options?.baseUrl || process.env.AGENTMEMORY_URL || DEFAULT_URL);
+  const baseUrl = options?.baseUrl ? normalizeBaseUrl(options.baseUrl) : resolveBaseUrl();
   const method = options?.method || "POST";
   const url = `${baseUrl}/agentmemory/${pathname.replace(/^\/+/, "")}`;
   const headers: Record<string, string> = {};
@@ -172,10 +178,7 @@ async function runBackup(opts: { dryRun?: boolean } = {}): Promise<BackupResult>
 
 export default function agentmemoryExtension(pi: ExtensionAPI) {
   if (process.env.AGENTMEMORY_REQUIRE_HTTPS === "1") {
-    guardPlaintextBearerAuth(
-      normalizeBaseUrl(process.env.AGENTMEMORY_URL || DEFAULT_URL),
-      process.env.AGENTMEMORY_SECRET,
-    );
+    guardPlaintextBearerAuth(resolveBaseUrl(), process.env.AGENTMEMORY_SECRET);
   }
 
   let sessionId = `ephemeral-${crypto.randomUUID().slice(0, 8)}`;
@@ -194,11 +197,11 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   }
 
   pi.registerCommand("agentmemory-status", {
-    description: "Check local agentmemory server health",
+    description: "Check agentmemory server health",
     handler: async (_args, ctx) => {
       const health = await getHealth();
       if (!health) {
-        ctx.ui.notify("agentmemory is unreachable at http://localhost:3111", "warning");
+        ctx.ui.notify(`agentmemory is unreachable at ${resolveBaseUrl()}`, "warning");
         return;
       }
       ctx.ui.notify(
@@ -211,13 +214,13 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "memory_health",
     label: "Memory Health",
-    description: "Check whether the local agentmemory server is reachable and healthy",
+    description: "Check whether the agentmemory server is reachable and healthy",
     parameters: Type.Object({}),
     async execute() {
       const health = await getHealth();
       if (!health) {
         return {
-          content: [{ type: "text", text: "agentmemory is unreachable at http://localhost:3111" }],
+          content: [{ type: "text", text: `agentmemory is unreachable at ${resolveBaseUrl()}` }],
           details: { ok: false },
         };
       }
